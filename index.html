@@ -99,7 +99,49 @@ function reorderParsed(parsed){
   originalOrder.forEach(tag=>{ if(map.has(tag)){ out.push(map.get(tag)); map.delete(tag); }});
   return out;
 }
- 
+
+function applyEdits(){
+  const amt = $('input54').value.trim() || '5232.67';
+
+  // ✅ Ensure Dynamic QR tag 01 = "12"
+  let tag01 = lastParsed.find(p=>p.tag==='01');
+  if(!tag01){
+    lastParsed.push({tag:'01', len:2, value:'12'});
+  } else {
+    tag01.len = 2;
+    tag01.value = '12';
+  }
+
+  // Remove existing 54 and re-add
+  lastParsed = lastParsed.filter(p=>p.tag!=='54');
+  const idx53 = lastParsed.findIndex(p=>p.tag==='53');
+  if(idx53 >= 0){
+    lastParsed.splice(idx53+1, 0, {tag:'54', len:byteLen(amt), value:amt});
+  } else {
+    lastParsed.push({tag:'54', len:byteLen(amt), value:amt});
+  }
+
+  // Ensure tag 62 exists with children
+  let p62 = lastParsed.find(p=>p.tag==='62');
+  if(!p62){ p62 = {tag:'62', len:0, value:'', children:[]}; lastParsed.push(p62); }
+  const childMap = p62.children ? childrenToMap(p62.children) : {};
+  childMap['01'] = timestampString();                // Bill No
+  childMap['02'] = '0943023332';                     // Phone
+  childMap['05'] = 'REFID' + randomDigits(10);       // Merchant Ref
+  childMap['08'] = randomName();                     // Purpose
+
+  const newChildren = Object.keys(childMap).sort().map(k=>({ tag:k, len:byteLen(childMap[k]), value:childMap[k] }));
+  p62.children = newChildren;
+  p62.value = newChildren.map(c=>`${c.tag}${pad2(byteLen(c.value))}${c.value}`).join('');
+  p62.len = byteLen(p62.value);
+
+  // Remove CRC if any and reorder
+  lastParsed = lastParsed.filter(p=>p.tag!=='63');
+  lastParsed = reorderParsed(lastParsed);
+}
+
+
+  
 // Build EMV TLV using UTF-8 byte lengths for length fields
 function buildEMV(parsed){
   function buildItem(item){
